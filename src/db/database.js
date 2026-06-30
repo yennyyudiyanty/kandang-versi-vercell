@@ -1,18 +1,41 @@
-const { createPool } = require('@vercel/postgres');
+const { Pool } = require('pg');
 
-const pool = createPool({
-  connectionString: process.env.POSTGRES_DATABASE_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL
+const connectionString =
+  process.env.POSTGRES_DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_PRISMA_URL ||
+  process.env.DATABASE_URL;
+
+if (!connectionString) {
+  console.error('FATAL: Tidak ada connection string database ditemukan di environment variables');
+}
+
+const pool = new Pool({
+  connectionString,
+  ssl: { rejectUnauthorized: false }
 });
 
-const sql = pool.sql;
+const sqlTag = async (strings, ...values) => {
+  let text = '';
+  strings.forEach((str, i) => {
+    text += str;
+    if (i < values.length) text += `$${i + 1}`;
+  });
+  return pool.query(text, values);
+};
+
+const sql = sqlTag;
+sql.query = (text, params) => pool.query(text, params);
 
 async function query(text, params = []) {
   try {
-    const result = await sql.query(text, params);
+    const result = await pool.query(text, params);
     return result;
   } catch (err) {
     console.error('DB Query Error:', err.message);
     throw err;
+  }
+}
   }
 }
 
