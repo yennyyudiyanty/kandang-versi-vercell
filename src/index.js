@@ -13,30 +13,43 @@ app.use(express.json({ limit: '10mb' }));
 let dbReady = false;
 
 async function setupDB() {
-  try {
-    await initDB();
+  await initDB();
 
-    const userCount = await getOne('SELECT COUNT(*) as count FROM users');
-    if (parseInt(userCount.count) === 0) {
-      await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Owner 1', 'owner1', ${bcrypt.hashSync('owner123',10)}, 'owner', 'all')`;
-      await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Owner 2', 'owner2', ${bcrypt.hashSync('owner456',10)}, 'owner', 'all')`;
-      await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Admin', 'admin1', ${bcrypt.hashSync('admin123',10)}, 'admin', 'all')`;
-      await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Petugas', 'petugas1', ${bcrypt.hashSync('petugas123',10)}, 'petugas', 'all')`;
-      console.log('Default users created');
-    }
-
-    dbReady = true;
-    console.log('DB ready');
-  } catch (err) {
-    console.error('DB setup error:', err.message);
+  const userCount = await getOne('SELECT COUNT(*) as count FROM users');
+  if (parseInt(userCount.count) === 0) {
+    await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Owner 1', 'owner1', ${bcrypt.hashSync('owner123',10)}, 'owner', 'all')`;
+    await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Owner 2', 'owner2', ${bcrypt.hashSync('owner456',10)}, 'owner', 'all')`;
+    await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Admin', 'admin1', ${bcrypt.hashSync('admin123',10)}, 'admin', 'all')`;
+    await sql`INSERT INTO users (name, username, password, role, farm) VALUES ('Petugas', 'petugas1', ${bcrypt.hashSync('petugas123',10)}, 'petugas', 'all')`;
+    console.log('Default users created');
   }
+
+  dbReady = true;
+  console.log('DB ready');
 }
 
-app.use((req, res, next) => {
-  if (!dbReady && req.path !== '/ping' && req.path !== '/') {
-    return res.status(503).json({ error: 'Server sedang menyiapkan database, coba lagi dalam beberapa detik' });
+let setupPromise = null;
+function ensureDB() {
+  if (!setupPromise) {
+    setupPromise = setupDB()
+      .then(() => { startScheduler(); })
+      .catch((err) => {
+        console.error('DB setup error:', err.message);
+        setupPromise = null;
+        throw err;
+      });
   }
-  next();
+  return setupPromise;
+}
+
+app.use(async (req, res, next) => {
+  if (req.path === '/ping' || req.path === '/') return next();
+  try {
+    await ensureDB();
+    next();
+  } catch (err) {
+    res.status(503).json({ error: 'Database belum siap: ' + err.message });
+  }
 });
 
 app.use('/api/auth', require('./routes/auth'));
@@ -57,7 +70,14 @@ app.get('/api/farms', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/ping', (req, res) => res.json({ status: 'ok', db: dbReady, time: new Date().toISOString() }));
+app.get('/ping', async (req, res) => {
+  try {
+    await ensureDB();
+    res.json({ status: 'ok', db: true, time: new Date().toISOString() });
+  } catch (err) {
+    res.json({ status: 'ok', db: false, error: err.message, time: new Date().toISOString() });
+  }
+});
 app.get('/', (req, res) => res.json({ message: 'JJ-Rolu Farm API', version: '1.0.0', db: dbReady }));
 
 async function checkDailyNotifications() {
@@ -115,9 +135,11 @@ function startScheduler() {
   console.log(`Scheduler aktif - berikutnya: ${next7AM.toLocaleString('id-ID')}`);
 }
 
-setupDB().then(() => {
+if (require.main === module) {
+  ensureDB();
   app.listen(PORT, () => {
     console.log(`JJ-Rolu Farm Server berjalan di port ${PORT}`);
-    startScheduler();
   });
-});
+}
+
+module.exports = app;

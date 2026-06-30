@@ -1,1 +1,0 @@
-# kandang-versi-vercell
