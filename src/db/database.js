@@ -36,8 +36,6 @@ async function query(text, params = []) {
     throw err;
   }
 }
-  }
-}
 
 async function getOne(text, params = []) {
   const result = await query(text, params);
