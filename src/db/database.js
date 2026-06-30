@@ -1,4 +1,10 @@
-const { sql } = require('@vercel/postgres');
+const { createPool } = require('@vercel/postgres');
+
+const pool = createPool({
+  connectionString: process.env.POSTGRES_DATABASE_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL
+});
+
+const sql = pool.sql;
 
 async function query(text, params = []) {
   try {
@@ -378,4 +384,4 @@ async function initDB() {
   }
 }
 
-module.exports = { sql, query, getOne, getMany, run, initDB };
+module.exports = { sql, query, getOne, getMany, run, initDB, pool };
